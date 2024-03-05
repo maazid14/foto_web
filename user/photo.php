@@ -1,16 +1,52 @@
 <?php
-// Hubungkan ke database
-$host = 'localhost';
-$dbname = 'gallery';
-$user = 'root';
-$password = '';
-
 session_start();
+
+$host = "localhost";
+$username = "root";
+$password = "";
+$database = "gallery";
+
+try {
+    $pdo = new PDO("mysql:host=$host;dbname=$database", $username, $password);
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    if (isset($_POST['photo_id'])) {
+        $photoId = $_POST['photo_id'];
+        $userId = $_SESSION['user_id'];
+
+        $stmtCheck = $pdo->prepare("SELECT * FROM `likes` WHERE `user_id` = ? AND `photo_id` = ?");
+        $stmtCheck->execute([$userId, $photoId]);
+
+        if ($stmtCheck->rowCount() > 0) {
+            $stmtUnlike = $pdo->prepare("DELETE FROM `likes` WHERE `user_id` = ? AND `photo_id` = ?");
+            $stmtUnlike->execute([$userId, $photoId]);
+
+            // Fetch the latest like count
+            $stmtLikeCount = $pdo->prepare("SELECT COUNT(`like_id`) AS `like_count` FROM `likes` WHERE `photo_id` = ?");
+            $stmtLikeCount->execute([$photoId]);
+            $likeCount = $stmtLikeCount->fetch(PDO::FETCH_ASSOC)['like_count'];
+
+            echo json_encode(array("success" => true, "action" => "unlike", "like_count" => $likeCount));
+        } else {
+            $stmtLike = $pdo->prepare("INSERT INTO `likes` (`user_id`, `photo_id`) VALUES (?, ?)");
+            $stmtLike->execute([$userId, $photoId]);
+
+            // Fetch the latest like count
+            $stmtLikeCount = $pdo->prepare("SELECT COUNT(`like_id`) AS `like_count` FROM `likes` WHERE `photo_id` = ?");
+            $stmtLikeCount->execute([$photoId]);
+            $likeCount = $stmtLikeCount->fetch(PDO::FETCH_ASSOC)['like_count'];
+
+            echo json_encode(array("success" => true, "action" => "like", "like_count" => $likeCount));
+        }
+    } 
+} catch (PDOException $e) {
+    echo json_encode(array("success" => false, "message" => "Connection failed: " . $e->getMessage()));
+}
 
 $userID = $_SESSION['user_id'];
 
 try {
-    $pdo = new PDO("mysql:host=$host;dbname=$dbname", $user, $password);
+    $pdo = new PDO("mysql:host=$host;dbname=$database", $username, $password);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch (PDOException $e) {
     echo "Connection failed: " . $e->getMessage();
@@ -33,11 +69,16 @@ $stmt->execute();
 $album = $stmt->fetch(PDO::FETCH_ASSOC);
 
 // Ambil data foto dari database berdasarkan album_id
-$stmt = $pdo->prepare("SELECT * FROM photos WHERE album_id = :album_id");
+$stmt = $pdo->prepare("SELECT p.*, COUNT(l.like_id) as like_count, 
+                            CASE WHEN l.user_id = :user_id THEN 1 ELSE 0 END as is_liked
+                       FROM photos p
+                       LEFT JOIN likes l ON p.photo_id = l.photo_id
+                       WHERE p.album_id = :album_id
+                       GROUP BY p.photo_id");
 $stmt->bindParam(':album_id', $album_id, PDO::PARAM_INT);
+$stmt->bindParam(':user_id', $userID, PDO::PARAM_INT);
 $stmt->execute();
 $photos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
 ?>
 
 <!DOCTYPE html>
@@ -176,14 +217,13 @@ $photos = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <div class="photo-actions">
                     <!-- Like Button -->
                     <a href="like_photo.php" class="btn btn-like" data-photo-id="<?php echo $photo['photo_id']; ?>"
-                        data-liked="<?php echo isset($photo['is_liked']) ? $photo['is_liked'] : 'false'; ?>">
+                        data-liked="<?php echo $photo['is_liked']; ?>">
                         <i class="fas fa-thumbs-up"></i> <span
-                            class="like-text"><?php echo isset($photo['is_liked']) && $photo['is_liked'] ? 'Unlike' : 'Like'; ?></span>
+                            class="like-text"><?php echo $photo['is_liked'] ? 'Unlike' : 'Like'; ?></span>
                     </a>
 
                     <!-- Display number of likes -->
-                    <span class="like-count"><?php echo isset($photo['like_count']) ? $photo['like_count'] : 0; ?>
-                        Likes</span>
+                    <span class="like-count"><?php echo $photo['like_count']; ?> Likes</span>
 
                     <!-- Comment Button -->
                     <a href="comment_photo.php?photo_id=<?php echo $photo['photo_id']; ?>" class="btn btn-comment">
@@ -191,11 +231,8 @@ $photos = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     </a>
 
                     <!-- Display number of comments -->
-                    <span
-                        class="comment-count"><?php echo isset($photo['comment_count']) ? $photo['comment_count'] : 0; ?>
-                        Comments</span>
-                </div>
 
+                </div>
             </div>
             <?php endforeach; ?>
         </div>
@@ -206,7 +243,7 @@ $photos = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 event.preventDefault();
 
                 var photoId = this.getAttribute('data-photo-id');
-                var isLiked = this.getAttribute('data-liked') === 'true';
+                var isLiked = this.getAttribute('data-liked') === '1';
                 var likeText = this.querySelector('.like-text');
                 var likeCount = this.nextElementSibling.querySelector('.like-count');
 
@@ -226,28 +263,19 @@ $photos = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         // Perbarui likeText, likeCount, dan atribut data-liked berdasarkan respons
                         if (data.success) {
                             likeText.textContent = data.action === 'like' ? 'Unlike' : 'Like';
-                            likeButton.setAttribute('data-liked', data.action === 'like' ? 'true' :
-                                'false');
+                            likeButton.setAttribute('data-liked', data.action === 'like' ? '1' :
+                                '0');
                             likeCount.textContent = data.like_count + ' Likes';
                         } else {
                             console.error('Error:', data.error);
                         }
                     })
                     .catch(error => console.error('Fetch Error:', error));
-
             });
         });
         </script>
 
-
-
-
-
-
-
-
-
-
+    </div>
 </body>
 
 </html>

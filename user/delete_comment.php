@@ -20,6 +20,8 @@ if ($_SERVER["REQUEST_METHOD"] == "GET" && isset($_GET["commen_id"])) {
 } else {
     echo "Invalid request.";
 }
+header("Location:user/comment_photo.php?album_id=" . $photo['album_id']);
+exit();
 
 // Menutup koneksi ke database
 mysqli_close($conn);

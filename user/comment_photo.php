@@ -75,6 +75,23 @@
     th {
         background-color: #f2f2f2;
     }
+
+    /* Add this style to your existing CSS */
+    a.delete-link {
+        color: #fff;
+        /* Set the color of the delete link */
+        text-decoration: none;
+        background-color: #0056b3;
+        padding: 5px;
+
+        /* Remove the default underline */
+    }
+
+    a.delete-link:hover {
+        text-decoration: underline;
+
+        /* Add underline on hover */
+    }
     </style>
 </head>
 
@@ -148,12 +165,13 @@
             </tr>";
                 while ($row = mysqli_fetch_assoc($result)) {
                     echo "<tr>
-                    <td>" . $row["username"] . "</td>
-                    <td>" . $row["comment_text"] . "</td>
-                    <td>" . $row["created_at"] . "</td>
-                    <td><a href='delete_comment.php?comment_id=" . $row["commen_id"] . "'>Delete</a></td>
-                </tr>";
+        <td>" . $row["username"] . "</td>
+        <td>" . $row["comment_text"] . "</td>
+        <td>" . $row["created_at"] . "</td>
+        <td><a class='delete-link' href='delete_comment.php?comment_id=" . $row["commen_id"] . "'>Delete</a></td>
+    </tr>";
                 }
+
                 echo "</table>";
             } else {
                 echo "No comments yet.";
